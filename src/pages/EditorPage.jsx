@@ -1,7 +1,6 @@
-import React from "react";
-
+import Room from "../components/Room.jsx"
 const EditorPage = () => {
-  return <div>Editor Page</div>;
+  return <div><Room/></div>;
 };
 
 export default EditorPage;
