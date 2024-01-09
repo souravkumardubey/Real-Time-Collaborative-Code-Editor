@@ -1,6 +1,11 @@
 import Room from "../components/Room.jsx"
-const EditorPage = () => {
-  return <div><Room/></div>;
+import NavbarEditor from "../components/NavbarEditor.jsx";
+const EditorPage = ({socket}) => {
+  return(
+      <div>
+          <Room socket={socket}/>
+      </div>
+    )
 };
 
 export default EditorPage;

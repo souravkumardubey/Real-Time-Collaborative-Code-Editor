@@ -1,14 +1,15 @@
 import {Editor} from "@monaco-editor/react";
+export default function EditorWindow({lang,theme,val,handler,onMount}){
 
-export default function EditorWindow({lang,theme,val,handler}){
     return (
         <Editor
-            width={"70vw"}
-            height={"85vh"}
+            width={"100%"}
+            height={"78vh"}
             language={lang}
             value={val}
             onChange={handler}
             theme={theme || 'vs-dark'}
+            onMount={onMount}
         />
     )
 }

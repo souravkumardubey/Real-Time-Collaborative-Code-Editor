@@ -1,16 +1,25 @@
-import style from "./Room.module.css"
 import EditorWindow from "./EditorWindow.jsx";
-import DropDownMenu from "./DropDownMenu.jsx";
-import { loader } from "@monaco-editor/react";
-import {useEffect, useRef, useState} from "react";
+import {loader} from "@monaco-editor/react";
+import {useEffect, useState} from "react";
 import { toast } from "sonner";
 import axios from 'axios';
-import {RotatingLines} from "react-loader-spinner";
 import nightOwl from "monaco-themes/themes/Night Owl.json";
 import monokai from "monaco-themes/themes/Monokai.json";
 import twilight from "monaco-themes/themes/Twilight.json";
 import github from "monaco-themes/themes/GitHub.json";
-
+import {RemoteCursorManager} from "@convergencelabs/monaco-collab-ext"
+import {
+    Button, Dropdown,
+    Grid,
+    GridColumn, GridRow,
+    Header, HeaderContent, Icon,
+    Segment,
+    TransitionGroup
+} from "semantic-ui-react";
+import UsersList from "./UsersList.jsx";
+import NavbarEditor from "./NavbarEditor.jsx";
+import {useLocation, useNavigate} from "react-router-dom";
+import RequestCard from "./RequestCard.jsx";
 const SUBMISSION_TOKEN = "submission_token";
 const USER_LANG_PREF = "user_lang";
 const USER_THEME_PREF = "user_theme";
@@ -18,24 +27,24 @@ const themeData = [null,nightOwl,monokai,twilight,github];
 
 const monacoThemes = [
     {
-        label:"Light",
-        name:"light"
+        label: "Light",
+        name: "light"
     },
     {
-        label:"Night Owl",
-        name:"night-owl"
+        label: "Night Owl",
+        name: "night-owl"
     },
     {
-        label:"Monokai",
-        name:"monokai",
+        label: "Monokai",
+        name: "monokai",
     },
     {
-        label:"Twilight",
-        name:"twilight"
+        label: "Twilight",
+        name: "twilight"
     },
     {
-        label:"GitHub",
-        name:"github"
+        label: "GitHub",
+        name: "github"
     }
 ]
 const programmingLanguages = [
@@ -46,17 +55,67 @@ const programmingLanguages = [
 
     },
     {
-        label:"Python 3",
-        id:71,name:"python"
+        label: "Python 3",
+        id: 71, name: "python"
     },
     {
-        label:"Java",
-        id:91, name:"java"
+        label: "Java",
+        id: 91, name: "java"
     },
     {
-        label:"C++",
-        id:54,
-        name:"cpp"
+        label: "C++",
+        id: 54,
+        name: "cpp"
+    }
+]
+const monacoOptions = [
+
+    {
+        text:"Light",
+        key:1,
+        value:0
+    },
+    {
+        text:"Night Owl",
+        key:2,
+        value:1
+    },
+    {
+        text:"Monokai",
+        key:3,
+        value: 2
+    },
+    {
+        text:"Twilight",
+        key:4,
+        value:3
+    },
+    {
+        text:"GitHub",
+        key:5,
+        value:4
+    }
+]
+const programmingOptions = [
+    {
+        key:1,
+        text:"Javascript",
+        value:0
+    },
+    {
+        key:2,
+        text:"Python 3",
+        value:1
+    },
+    {
+        key:3,
+        text:"Java",
+        value:2
+    },
+    {
+        key:4,
+        text:"C++",
+        value:3
     },
 ]
 
@@ -73,17 +132,24 @@ const defineTheme = (name,ind) => {
 };
 
 
-export default function Room(){
-    const stdInputRef = useRef(null);
+export default function Room({socket}){
+    const [stdInput,setStdInput] = useState("");
     const [lang,setLang] = useState(programmingLanguages[initInd(USER_LANG_PREF)]);
     const [theme,setTheme] = useState(monacoThemes[initInd(USER_THEME_PREF)]);
     const [code,setCode] = useState("");
     const [loading,setLoading] = useState(false);
     const [output,setOutput] = useState({err:false,output:""});
-
+    const [inputVisable,setInputVisable] = useState(false);
+    const [joinReq,setJoinReq] = useState({open:false});
+    const [outputVisable,setOutputVisable] = useState(false);
+    const [users,setUsers] = useState([]);
+    const {state} = useLocation();
+    const navigate = useNavigate();
 
 
     useEffect(() => {
+        if(state === null)navigate("/");
+        socketHandler();
         // eslint-disable-next-line no-prototype-builtins
         if(localStorage.hasOwnProperty(lang.name)){
             setCode(localStorage.getItem(lang.name));
@@ -91,9 +157,7 @@ export default function Room(){
             setCode("");
         }
     }, [lang]);
-
-
-
+    
 
     useEffect(() => {
         // eslint-disable-next-line no-prototype-builtins
@@ -106,6 +170,42 @@ export default function Room(){
             }
         }
     }, []);
+    function socketHandler(){
+        socket.emit("getSourceCode",localStorage.getItem("roomId"));
+        socket.emit("getUsers",localStorage.getItem("roomId"));
+        socket.on("joinReq",(data)=>{
+            setJoinReq({userName:data.userName,email:data.email,open:true});
+        });
+        socket.on("sourceCodeRes",({sourceCode})=>{
+            setCode(sourceCode);
+        })
+        socket.on("usersRes",(users)=>{
+            setUsers([...users.users]);
+        })
+        socket.on("userJoined",(data)=>{
+            if(data.roomId !== localStorage.getItem("roomId"))return;
+            socket.emit("getUsers",localStorage.getItem("roomId"));
+            toast.message(`${data.userName} Joined`);
+        });
+
+        socket.on("userLeft",(data)=>{
+            if(data.roomId !== localStorage.getItem("roomId"))return;
+            socket.emit("getUsers",localStorage.getItem("roomId"));
+            toast.message(`${data.userName} Left`);
+        })
+        socket.on("forcedLeave",(data)=>{
+            if(data.roomId !== localStorage.getItem("roomId"))return;
+            socket.emit("leaveRoom",{userName:localStorage.getItem("userName"),roomId:localStorage.getItem("roomId")});
+            toast.message("Admin Left The room");
+            navigate("/");
+        })
+    }
+
+    function requestHandler(val){
+        socket.emit("AdminReqRes",{allowed:val,userName:joinReq.userName,roomId:localStorage.getItem("roomId")});
+        setJoinReq({open:false})
+    }
+
 
     function initInd(C){
         // eslint-disable-next-line no-prototype-builtins
@@ -113,13 +213,13 @@ export default function Room(){
         return 0;
     }
 
-    function onLanguageChange(e){
-        localStorage.setItem(USER_LANG_PREF,e.target.value);
-        setLang(programmingLanguages[Number(e.target.value)]);
+    function onLanguageChange(val){
+        localStorage.setItem(USER_LANG_PREF,val);
+        setLang(programmingLanguages[Number(val)]);
     }
 
-    function onThemeChange(e){
-        const ind = Number(e.target.value);
+    function onThemeChange(val){
+        const ind = Number(val);
         if(ind !== 0){
             defineTheme(monacoThemes[ind].name,ind).then(()=>{
                 setTheme(monacoThemes[ind]);
@@ -127,13 +227,67 @@ export default function Room(){
         }else{
             setTheme(monacoThemes[ind]);
         }
-        localStorage.setItem(USER_THEME_PREF,e.target.value);
+        localStorage.setItem(USER_THEME_PREF,val);
 
     }
 
     function onTextChange(val){
-        localStorage.setItem(lang.name,code);
         setCode(val);
+        // const pos = editor.getPosition();
+        // socket.emit("codeChange",{cursorPos:pos,text:val});
+
+    }
+
+    const handleInputVisibility = ()=> setInputVisable((prev)=>!prev);
+    const handleOutputVisbility = () => setOutputVisable((prev)=>!prev);
+    function editorOnMount(editor,monaco){
+        const remoteCursorManager = new RemoteCursorManager({
+            editor: editor,
+            tooltips: true,
+            tooltipDuration:0.5,
+            tooltipClassName:"my_cursor"
+        });
+
+        const cursor = remoteCursorManager.addCursor("_ADS", "black", "satvik");
+        socket.on("update",({roomId,userName,data})=>{
+            console.log(data,roomId,userName);
+            if(roomId !== localStorage.getItem("roomId") || userName === localStorage.getItem("userName"))return
+            // eslint-disable-next-line no-prototype-builtins
+            if(!data.hasOwnProperty("cursorPos") || !data.hasOwnProperty("text"))return;
+            // eslint-disable-next-line no-prototype-builtins
+            if(data.hasOwnProperty("spec")){
+                setCode(data.text);
+                // eslint-disable-next-line no-prototype-builtins
+            }else if(!data.hasOwnProperty("cursorChange")){
+                editor.executeEdits("my-source", [
+                    {
+                        range: new monaco.Range(
+                            data.cursorPos.lineNumber,
+                            data.cursorPos.column,
+                            data.cursorPos.lineNumber,
+                            data.cursorPos.column + 1
+                        ),
+                        text: data.text,
+                        forceMoveMarkers: true,
+                    }
+                ])
+            }
+            cursor.setPosition(new monaco.Position(data.cursorPos.lineNumber,data.cursorPos.column));
+        })
+        editor.onKeyUp((e)=>{
+            const pos = editor.getPosition();
+            let str = e.browserEvent.key;
+            const obj = {cursorPos:pos,text:str};
+            if(str.length > 1 || e.keyCode === monaco.KeyCode.Space){
+                if(e.keyCode === monaco.KeyCode.Space || e.keyCode === monaco.KeyCode.Enter || e.keyCode === monaco.KeyCode.Tab || e.keyCode === monaco.KeyCode.Backspace) {
+                    obj.spec = true;
+                    obj.text = editor.getValue();
+                }else if(e.keyCode === monaco.KeyCode.UpArrow || e.keyCode === monaco.KeyCode.LeftArrow || e.keyCode === monaco.KeyCode.DownArrow || e.keyCode === monaco.KeyCode.RightArrow){
+                    obj.cursorChange = true;
+                }else return;
+            }
+            socket.emit("codeChange",{data:obj,roomId:localStorage.getItem("roomId"),userName:localStorage.getItem("userName")});
+        })
     }
 
     async function executeCode(){
@@ -156,7 +310,7 @@ export default function Room(){
             data: {
                 language_id: lang.id,
                 source_code:btoa(code),
-                stdin:btoa(stdInputRef.current.value)
+                stdin:btoa(stdInput)
             }
         };
         axios.request(options)
@@ -211,6 +365,7 @@ export default function Room(){
                             obj = {err:true,output:res.data.stderr !== null ? atob(res.data.stderr) : ""}
 
                         }
+                        setOutputVisable(true);
                         setOutput(obj);
                         setLoading(false);
                         localStorage.removeItem(SUBMISSION_TOKEN);
@@ -225,34 +380,65 @@ export default function Room(){
                 toast.message(`Code execution failed. Run  again.`);
             });
     }
-
+    function handleLeave(){
+        socket.emit("leaveRoom",{roomId:localStorage.getItem("roomId"),userName:localStorage.getItem("userName")})
+        navigate("/");
+    }
     return (
-        <div className={style.wrapper}>
-            <div className={style.io}>
-                <p style={{color:"whitesmoke",margin:"10px 0px"}}>Input: </p>
-                <textarea className={style.input} ref={stdInputRef} />
-                <div style={{display:"flex"}}>
-                    <p style={{color:"whitesmoke",margin:"10px 0px",marginRight:"10px"}} >Output:</p>
-                    <RotatingLines
-                        strokeColor="white"
-                        strokeWidth="5"
-                        animationDuration="0.90"
-                        width="25"
-                        visible={loading}
-                    />
-                </div>
-                <textarea readOnly={true} className={style.output} style={{color:output.err ? "red":"black"}} value={output.output}/>
-                <button className={style.btn} onClick={executeCode} disabled={loading}>Run</button>
-            </div>
-
-            <div className={style.editor}>
-                <div className={style.dropdown}>
-                    <DropDownMenu onSelect={onLanguageChange} selected={initInd(USER_LANG_PREF)} options={programmingLanguages} styles={{marginRight:"10px"}}/>
-                    <DropDownMenu options={monacoThemes} onSelect={onThemeChange} selected={initInd(USER_THEME_PREF)}/>
-                </div>
-                <EditorWindow lang={lang.name} theme={theme.name}  handler={onTextChange} val={code}/>
-            </div>
-        </div>
-
+        <>
+            <NavbarEditor onLeave={handleLeave} />
+            <Grid relaxed stackable style={{margin:"0 0 0 0"}}>
+                <GridColumn width={4} style={{paddingRight:"0px",display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+                    <GridRow>
+                        <Segment style={{overflow:"auto",minHeight:"350px",maxHeight:"350px",marginBottom:"16px"}}>
+                            <TransitionGroup animation={"fade"} duration={500}>
+                                {   joinReq.open &&
+                                    <RequestCard userName={joinReq.userName} handler={requestHandler}/>
+                                }
+                            </TransitionGroup>
+                            <UsersList user={users} admin={false}/>
+                        </Segment>
+                    </GridRow>
+                    <GridRow>
+                        <Header as={"h4"}>
+                    <span onClick={handleInputVisibility}>
+                        <HeaderContent style={{color:"white"}}>
+                        Input:
+                        <Icon name={"dropdown"}  />
+                    </HeaderContent>
+                    </span>
+                        </Header>
+                        <TransitionGroup animation={"fade down"} duration={500}>
+                            {
+                                inputVisable &&
+                                <textarea style={{padding:"16px",marginBottom:"8px",width:"100%",resize:"none",minHeight:"100px"}} onChange={(data)=>setStdInput(data.target.value)} />
+                            }
+                        </TransitionGroup>
+                        <Header as={"h4"}>
+                    <span onClick={handleOutputVisbility}>
+                        <HeaderContent style={{color:"white"}}>
+                        Output:
+                        <Icon name={"dropdown"} />
+                    </HeaderContent>
+                    </span>
+                        </Header>
+                        <TransitionGroup animation={"fade down"} duration={500}>
+                            {
+                                (outputVisable) &&
+                                <textarea readOnly={true} style={{padding:"12px",marginBottom:"8px",resize:"none",minHeight:"100px",width:"100%",color:output.err ? "red":"black"}} value={output.output}/>
+                            }
+                        </TransitionGroup>
+                        <Button  style={{display:"position"}} color={"teal"} fluid loading={loading} onClick={executeCode} disabled={loading} >Run</Button>
+                    </GridRow>
+                </GridColumn>
+                <GridColumn width={12}>
+                    <div style={{marginBottom:"16px",display:"flex",justifyContent:"space-evenly"}}>
+                        <Dropdown onChange={(e,data)=> onLanguageChange(data.value)} defaultValue={initInd(USER_LANG_PREF)} style={{marginRight:"8px"}} fluid selection options={programmingOptions} />
+                        <Dropdown onChange={(e,data)=> onThemeChange(data.value)} fluid selection options={monacoOptions} defaultValue={initInd(USER_THEME_PREF)} />
+                    </div>
+                    <EditorWindow lang={lang.name} theme={theme.name}  handler={onTextChange} val={code} onMount={editorOnMount}/>
+                </GridColumn>
+            </Grid>
+        </>
     )
 }
